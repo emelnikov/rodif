@@ -1,4 +1,4 @@
-#!/home/eugene/virtualenvs/rodif/bin/python3
+#!/home/ubuntu/virtualenvs/rodif/bin/python3
 import configparser
 import re
 from telepot import Bot
