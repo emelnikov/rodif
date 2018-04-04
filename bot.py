@@ -1,6 +1,8 @@
 #!/home/ubuntu/virtualenvs/rodif/bin/python3
 import configparser
 import re
+import imaplib
+import email
 from telepot import Bot
 from telepot.loop import MessageLoop
 from time import sleep
@@ -14,6 +16,7 @@ class Rodif():
         self.participants = self.config['General']['participants'].replace(' ', '').split(',')
         self.bot = Bot(self.token)
         MessageLoop(self.bot, self.handle).run_as_thread()
+        self.imap()
 
     def handle(self, msg):
         message_body = msg['text']
@@ -22,8 +25,9 @@ class Rodif():
                 if message_body[1:7] == 'ticket':
                     self.bot.sendMessage(msg['chat']['id'], 'We have new ticket, %s' % ', '.join(self.participants))
                     #Send a link
-                    if self.config['General']['jira_tag'] in message_body[len('/ticket'):]:
-                        self.bot.sendMessage(msg['chat']['id'], self.config['General']['jira'] + re.search(r'FCSD-\d*', message_body).group(0))
+                    #CHANGE TO JIRA TAG
+                    if re.search(r'FCSD\-\d*$', message_body):
+                        self.bot.sendMessage(msg['chat']['id'], self.config['General']['jira'] + re.search(r'FCSD\-\d*$', message_body).group(0))
                 elif message_body[1:6] == 'addme':
                     try:
                         if len(self.config['General']['participants'].replace('@%s' % msg['from']['username'],'')) != len(self.config['General']['participants']):
@@ -46,6 +50,41 @@ class Rodif():
 
     def read_config(self):
         self.participants = self.config['General']['participants'].replace(' ', '').split(',')
+
+    def imap(self):
+        sleep_seconds = int(self.config['General']['sleep'])
+        email_prev = False
+        while True:
+            try:
+                mail = imaplib.IMAP4_SSL(self.config['General']['imap_address'])
+                mail.login(self.config['General']['imap_login'], self.config['General']['imap_password'])
+                while True:
+                    mail.list()
+                    mail.select(self.config['General']['jira_imap_label'])  # connect to imap folder.
+
+                    result, data = mail.search(None, 'UNSEEN')
+
+                    if result == 'OK':
+                        for num in data[0].split():
+                            retcode, message = mail.fetch(num,'(RFC822)')
+                            parsed_message = email.message_from_bytes(message[0][1])
+                            subject = email.header.decode_header(parsed_message['subject'])
+                            try:
+                                if subject[0][1] is None:
+                                    subject_string = subject[0][0]
+                                else:
+                                    subject_string = subject[0][0].decode(subject[0][1])
+                            except Exception as e:
+                                print(e)
+                            # print(subject_string)
+                            self.bot.sendMessage(self.config['General']['allowed'], 'New ticket: ' + subject_string)
+                            # mail.store(num, '-FLAGS', '\Seen')
+                            sleep(sleep_seconds)
+                mail.close()
+            except Exception as e:
+                print(e)
+                sleep(sleep_seconds)
+                continue
 
 Rodif()
 
